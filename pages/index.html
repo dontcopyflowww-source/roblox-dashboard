@@ -3,297 +3,213 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Game Ledger — Live Player Stats</title>
+<title>GameTrack — Live Player Stats</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
 <style>
   :root{
-    --bg: #14161c;
-    --bg-panel: #1b1e26;
-    --bg-card: #20232c;
-    --hairline: #2c303b;
-    --ink: #f0eee6;
-    --ink-dim: #8b93a6;
-    --gold: #e8a33d;
-    --gold-dim: #9c763f;
-    --live: #4fd1c5;
-    --danger: #d9704f;
+    --bg: #0b0d13;
+    --panel: #12151d;
+    --panel-2: #171b25;
+    --hairline: #23283434;
+    --hairline2: #232834;
+    --ink: #e9ebf2;
+    --ink-dim: #8891a3;
+    --accent: #7c6ff0;
+    --accent-soft: rgba(124,111,240,0.12);
+    --green: #3ecf8e;
+    --gold: #e8b23d;
+    --blue: #5b9df0;
+    --red: #ea6d6d;
   }
   *{ box-sizing:border-box; }
   html,body{ margin:0; padding:0; }
   body{
-    background:
-      radial-gradient(1200px 500px at 15% -10%, rgba(232,163,61,0.06), transparent 60%),
-      var(--bg);
+    background: var(--bg);
     color: var(--ink);
     font-family: 'Inter', sans-serif;
     min-height: 100vh;
-    padding: 32px 24px 64px;
   }
-  .wrap{ max-width: 1180px; margin: 0 auto; }
+  .wrap{ max-width: 1180px; margin: 0 auto; padding: 0 24px 60px; }
 
-  header{
-    display:flex; align-items:flex-end; justify-content:space-between;
-    flex-wrap: wrap; gap: 16px;
-    border-bottom: 1px solid var(--hairline);
-    padding-bottom: 20px; margin-bottom: 28px;
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 18px 24px; border-bottom: 1px solid var(--hairline2);
+    margin-bottom: 22px;
   }
-  .title-block h1{
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 28px; font-weight: 700; letter-spacing: -0.02em;
-    margin: 0 0 4px;
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand .mark{
+    width:22px; height:22px; border-radius:6px;
+    background: linear-gradient(135deg, var(--accent), #4b3fc4);
+    transform: rotate(45deg);
   }
-  .title-block .sub{ color: var(--ink-dim); font-size: 13px; }
-  .status{
-    display:flex; align-items:center; gap: 22px;
+  .brand .name{ font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:17px; }
+  .topbar-right{ display:flex; align-items:center; gap:10px; }
+  .badge{
+    display:flex; align-items:center; gap:6px;
+    font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+    padding: 5px 10px; border-radius: 20px; border:1px solid var(--hairline2); color: var(--ink-dim);
   }
-  .status .stat{ text-align:right; }
-  .status .stat .num{
-    font-family:'IBM Plex Mono', monospace; font-size: 22px; font-weight:600;
-  }
-  .status .stat .label{ font-size: 11px; color: var(--ink-dim); text-transform:uppercase; letter-spacing:.08em; }
-  .live-pill{
-    display:flex; align-items:center; gap:7px;
-    font-family:'IBM Plex Mono', monospace; font-size: 11px; letter-spacing:.08em;
-    text-transform:uppercase; color: var(--live);
-    border: 1px solid rgba(79,209,197,0.35); background: rgba(79,209,197,0.08);
-    padding: 6px 10px; border-radius: 20px;
-  }
-  .live-dot{
-    width:7px; height:7px; border-radius:50%; background: var(--live);
-    box-shadow: 0 0 0 0 rgba(79,209,197,0.6);
-    animation: pulse 1.8s infinite;
-  }
-  @keyframes pulse{
-    0%{ box-shadow: 0 0 0 0 rgba(79,209,197,0.55); }
-    70%{ box-shadow: 0 0 0 7px rgba(79,209,197,0); }
-    100%{ box-shadow: 0 0 0 0 rgba(79,209,197,0); }
-  }
+  .badge.live{ color: var(--green); border-color: rgba(62,207,142,0.35); background: rgba(62,207,142,0.08); }
+  .dot{ width:6px; height:6px; border-radius:50%; background: currentColor; animation: pulse 1.8s infinite; }
+  @keyframes pulse{ 0%{opacity:1;} 50%{opacity:.35;} 100%{opacity:1;} }
 
-  .grid{
-    display:grid;
-    grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
-    gap: 14px;
+  .panel{
+    background: var(--panel); border:1px solid var(--hairline2); border-radius:12px;
+    margin-bottom: 18px; overflow:hidden;
   }
+  .panel-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 13px 18px; border-bottom:1px solid var(--hairline2);
+    font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.1em; color: var(--ink-dim); text-transform:uppercase;
+  }
+  .feed{ max-height: 260px; overflow-y:auto; }
+  .feed-row{
+    display:flex; align-items:center; gap:12px; padding: 9px 18px;
+    border-bottom: 1px solid var(--hairline); font-size: 13px;
+  }
+  .feed-row:last-child{ border-bottom:none; }
+  .feed-tag{
+    font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.05em; text-transform:uppercase;
+    padding: 2px 7px; border-radius: 4px; flex-shrink:0; width: 58px; text-align:center;
+  }
+  .feed-tag.online{ color: var(--green); background: rgba(62,207,142,0.1); }
+  .feed-tag.offline{ color: var(--ink-dim); background: rgba(136,145,163,0.1); }
+  .feed-tag.item{ color: var(--blue); background: rgba(91,157,240,0.1); }
+  .feed-tag.currency{ color: var(--gold); background: rgba(232,178,61,0.1); }
+  .feed-tag.level{ color: var(--accent); background: var(--accent-soft); }
+  .feed-user{ font-weight:600; flex-shrink:0; }
+  .feed-desc{ color: var(--ink-dim); flex:1; }
+  .feed-time{ font-family:'IBM Plex Mono', monospace; font-size:11px; color: var(--ink-dim); flex-shrink:0; }
+  .feed-empty{ padding: 30px 18px; text-align:center; color: var(--ink-dim); font-size:13px; }
 
-  .card{
-    background: var(--bg-card);
-    border: 1px solid var(--hairline);
-    border-radius: 10px;
-    padding: 16px 18px;
-    position: relative;
-    transition: border-color .3s ease;
+  .stats{ display:grid; grid-template-columns: repeat(5, 1fr); gap:12px; margin-bottom: 18px; }
+  .stat-card{
+    background: var(--panel); border:1px solid var(--hairline2); border-radius:12px; padding: 14px 16px;
   }
-  .card.offline{ opacity: 0.45; }
-  .card-top{
-    display:flex; align-items:center; gap: 10px; margin-bottom: 14px;
+  .stat-card .label{ font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color: var(--ink-dim); margin-bottom:6px; }
+  .stat-card .value{ font-family:'Space Grotesk', sans-serif; font-size:24px; font-weight:700; }
+  .stat-card .value.accent{ color: var(--accent); }
+  .stat-card .value.gold{ color: var(--gold); }
+  .stat-card .value.green{ color: var(--green); }
+
+  .controls{ display:flex; align-items:center; gap:12px; margin-bottom: 14px; flex-wrap:wrap; }
+  .search{
+    flex:1; min-width:200px;
+    background: var(--panel); border:1px solid var(--hairline2); border-radius:8px;
+    padding: 9px 14px; color: var(--ink); font-family:'Inter',sans-serif; font-size:13px;
   }
+  .search::placeholder{ color: var(--ink-dim); }
+  .tabs{ display:flex; gap:6px; }
+  .tab{
+    font-family:'IBM Plex Mono', monospace; font-size:12px; color: var(--ink-dim);
+    background: var(--panel); border:1px solid var(--hairline2); border-radius:8px;
+    padding: 8px 13px; cursor:pointer; user-select:none;
+  }
+  .tab.active{ color: var(--ink); background: var(--panel-2); border-color: var(--accent); }
+
+  .table-wrap{ background: var(--panel); border:1px solid var(--hairline2); border-radius:12px; overflow:hidden; }
+  .row{ border-bottom: 1px solid var(--hairline); }
+  .row:last-child{ border-bottom:none; }
+  .row-head{
+    display:grid; grid-template-columns: 28px 2fr 1fr 0.7fr 0.7fr 1fr 0.8fr;
+    align-items:center; gap: 10px; padding: 13px 16px; cursor:pointer;
+  }
+  .row-head:hover{ background: rgba(255,255,255,0.02); }
+  .col-label{
+    font-family:'IBM Plex Mono', monospace; font-size:10px; color: var(--ink-dim); text-transform:uppercase; letter-spacing:.06em;
+  }
+  .chevron{ transition: transform .15s ease; color: var(--ink-dim); font-size:11px; }
+  .row.expanded .chevron{ transform: rotate(90deg); }
+  .acct{ display:flex; align-items:center; gap:10px; min-width:0; }
   .avatar{
-    width: 34px; height:34px; border-radius: 8px;
-    background: linear-gradient(135deg, var(--gold), var(--gold-dim));
-    color: #1b1508; font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:15px;
-    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+    width: 28px; height:28px; border-radius:7px; flex-shrink:0;
+    background: linear-gradient(135deg, var(--accent), #4b3fc4);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:12px; color:#fff;
   }
-  .name-block{ min-width:0; }
-  .username{ font-weight:600; font-size:14.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .userid{ color: var(--ink-dim); font-size:11px; font-family:'IBM Plex Mono', monospace; }
-  .level-badge{
-    margin-left:auto; font-family:'IBM Plex Mono', monospace; font-size: 11px;
-    color: var(--ink); background: var(--bg-panel); border:1px solid var(--hairline);
-    padding: 3px 8px; border-radius: 20px; flex-shrink:0;
-  }
+  .acct-name{ min-width:0; }
+  .acct-name .u{ font-weight:600; font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .acct-name .id{ font-family:'IBM Plex Mono', monospace; font-size:10.5px; color: var(--ink-dim); }
+  .col{ font-family:'IBM Plex Mono', monospace; font-size:13px; }
+  .col.currency{ color: var(--gold); font-weight:600; }
+  .status-pill{ font-size:11px; font-family:'IBM Plex Mono', monospace; }
+  .status-pill.online{ color: var(--green); }
+  .status-pill.offline{ color: var(--ink-dim); }
 
-  .currency-row{
-    display:flex; align-items:baseline; gap:6px; margin-bottom: 12px;
-    font-family:'IBM Plex Mono', monospace;
-  }
-  .currency-row .amount{
-    font-size: 22px; font-weight:600; color: var(--gold);
-  }
-  .currency-row .cur-label{ font-size:11px; color: var(--ink-dim); text-transform:uppercase; letter-spacing:.06em; }
+  .row-body{ display:none; padding: 4px 16px 18px 54px; }
+  .row.expanded .row-body{ display:block; }
+  .inv-label{ font-size:10.5px; color: var(--ink-dim); text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; }
+  .inv-chips{ display:flex; flex-wrap:wrap; gap:6px; }
+  .chip{ font-size:11.5px; padding: 4px 9px; border-radius:6px; background: var(--panel-2); border:1px solid var(--hairline2); color: var(--ink); }
+  .chip.empty{ color: var(--ink-dim); border-style:dashed; }
 
   .amount.flash{ animation: flash 0.9s ease; }
-  @keyframes flash{
-    0%{ color: var(--ink); text-shadow: 0 0 14px rgba(232,163,61,0.9); }
-    100%{ color: var(--gold); text-shadow: none; }
-  }
+  @keyframes flash{ 0%{ color:#fff; text-shadow:0 0 12px rgba(232,178,61,.9);} 100%{ color: var(--gold); text-shadow:none; } }
 
-  .inv-label{ font-size:10.5px; color: var(--ink-dim); text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px; }
-  .inv-chips{ display:flex; flex-wrap:wrap; gap:5px; min-height: 22px; }
-  .chip{
-    font-size: 11px; padding: 3px 8px; border-radius: 5px;
-    background: var(--bg-panel); border: 1px solid var(--hairline); color: var(--ink-dim);
-  }
-  .chip.empty{ border-style:dashed; }
+  .empty-state{ text-align:center; padding: 70px 20px; color: var(--ink-dim); font-size:13px; }
 
-  .updated{
-    position:absolute; top:14px; right:16px; font-size:10px; color: var(--ink-dim);
-    font-family:'IBM Plex Mono', monospace;
-  }
-
-  .empty-state{
-    text-align:center; padding: 90px 20px; color: var(--ink-dim);
-  }
-  .empty-state .glyph{ font-size: 34px; margin-bottom: 10px; }
-  .empty-state .sub{ font-size:13px; max-width:360px; margin: 6px auto 0; line-height:1.5; }
-
-  footer{
-    margin-top: 34px; text-align:center; font-size: 11px; color: var(--ink-dim);
-    font-family: 'IBM Plex Mono', monospace;
+  @media (max-width: 760px){
+    .stats{ grid-template-columns: repeat(2,1fr); }
+    .row-head{ grid-template-columns: 24px 2fr 1fr 1fr; }
+    .row-head .col-level, .row-head .col-items, .row-head .col-updated{ display:none; }
   }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div class="title-block">
-      <h1>Game Ledger</h1>
-      <div class="sub">Live player stats — currency, level &amp; inventory</div>
-    </div>
-    <div class="status">
-      <div class="stat">
-        <div class="num" id="onlineCount">0</div>
-        <div class="label">In Game</div>
-      </div>
-      <div class="stat">
-        <div class="num" id="totalCurrency">0</div>
-        <div class="label">Total Currency</div>
-      </div>
-      <div class="live-pill"><span class="live-dot"></span><span id="connLabel">Connecting</span></div>
-    </div>
-  </header>
+<div class="topbar">
+  <div class="brand"><div class="mark"></div><div class="name">GameTrack</div></div>
+  <div class="topbar-right">
+    <div class="badge live" id="connBadge"><span class="dot"></span><span id="connLabel">Live</span></div>
+  </div>
+</div>
 
-  <div class="grid" id="grid"></div>
-  <div class="empty-state" id="emptyState" style="display:none;">
-    <div class="glyph">◌</div>
-    <div>No players reporting yet</div>
-    <div class="sub">Once your Roblox game sends its first player-update, cards will appear here automatically.</div>
+<div class="wrap">
+  <div class="panel">
+    <div class="panel-head"><span>Live activity feed</span><span id="feedDot" style="color:var(--green)">●</span></div>
+    <div class="feed" id="feed"><div class="feed-empty">Waiting for activity…</div></div>
   </div>
 
-  <footer>game-ledger · updates over websocket · no refresh needed</footer>
+  <div class="stats">
+    <div class="stat-card"><div class="label">Online</div><div class="value green" id="statOnline">0</div></div>
+    <div class="stat-card"><div class="label">Total Accounts</div><div class="value" id="statTotal">0</div></div>
+    <div class="stat-card"><div class="label">Total Currency</div><div class="value gold" id="statCurrency">0</div></div>
+    <div class="stat-card"><div class="label">Avg Level</div><div class="value accent" id="statLevel">0</div></div>
+    <div class="stat-card"><div class="label">Total Items</div><div class="value" id="statItems">0</div></div>
+  </div>
+
+  <div class="controls">
+    <input class="search" id="search" placeholder="Search username…">
+    <div class="tabs">
+      <div class="tab active" data-filter="all">All</div>
+      <div class="tab" data-filter="online">Online</div>
+      <div class="tab" data-filter="offline">Offline</div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <div class="row-head" style="cursor:default;">
+      <div></div>
+      <div class="col-label">Account</div>
+      <div class="col-label">Currency</div>
+      <div class="col-label col-level">Level</div>
+      <div class="col-label col-items">Items</div>
+      <div class="col-label col-updated">Updated</div>
+      <div class="col-label">Status</div>
+    </div>
+    <div id="rows"></div>
+    <div class="empty-state" id="emptyState" style="display:none;">No accounts reporting yet — once your Roblox game sends its first update, they'll appear here.</div>
+  </div>
 </div>
 
 <script>
-const grid = document.getElementById('grid');
+const rowsEl = document.getElementById('rows');
 const emptyState = document.getElementById('emptyState');
-const onlineCountEl = document.getElementById('onlineCount');
-const totalCurrencyEl = document.getElementById('totalCurrency');
+const feedEl = document.getElementById('feed');
 const connLabel = document.getElementById('connLabel');
+const connBadge = document.getElementById('connBadge');
+const searchEl = document.getElementById('search');
+const tabs = document.querySelectorAll('.tab');
 
-let players = {}; // userId -> player object
-
-function initials(name){
-  return (name || '?').slice(0,2).toUpperCase();
-}
-
-function renderAll(){
-  const list = Object.values(players).sort((a,b)=>{
-    if (a.inGame !== b.inGame) return a.inGame ? -1 : 1;
-    return (b.currency||0) - (a.currency||0);
-  });
-
-  emptyState.style.display = list.length ? 'none' : 'block';
-
-  const online = list.filter(p=>p.inGame);
-  onlineCountEl.textContent = online.length;
-  totalCurrencyEl.textContent = online.reduce((s,p)=>s+(p.currency||0),0).toLocaleString();
-
-  grid.innerHTML = '';
-  list.forEach(p => grid.appendChild(renderCard(p)));
-}
-
-function renderCard(p, flashCurrency){
-  const card = document.createElement('div');
-  card.className = 'card' + (p.inGame ? '' : ' offline');
-  card.id = 'card-' + p.userId;
-
-  const chips = (p.inventory && p.inventory.length)
-    ? p.inventory.slice(0,6).map(i => `<span class="chip">${escapeHtml(i)}</span>`).join('')
-    : `<span class="chip empty">empty</span>`;
-
-  card.innerHTML = `
-    <div class="updated">${p.inGame ? 'live' : 'offline'}</div>
-    <div class="card-top">
-      <div class="avatar">${initials(p.username)}</div>
-      <div class="name-block">
-        <div class="username">${escapeHtml(p.username)}</div>
-        <div class="userid">#${p.userId}</div>
-      </div>
-      <div class="level-badge">LVL ${p.level ?? 1}</div>
-    </div>
-    <div class="currency-row">
-      <span class="amount${flashCurrency ? ' flash' : ''}">${(p.currency||0).toLocaleString()}</span>
-      <span class="cur-label">coins</span>
-    </div>
-    <div class="inv-label">Inventory (${p.inventory ? p.inventory.length : 0})</div>
-    <div class="inv-chips">${chips}</div>
-  `;
-  return card;
-}
-
-function escapeHtml(s){
-  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-function upsertPlayer(p, isLiveUpdate){
-  const prev = players[p.userId];
-  players[p.userId] = p;
-  renderAll();
-  if (isLiveUpdate) {
-    const el = document.querySelector('#card-' + p.userId + ' .amount');
-    if (el && prev && prev.currency !== p.currency) {
-      el.classList.add('flash');
-      setTimeout(()=>el.classList.remove('flash'), 900);
-    }
-  }
-}
-
-// ---- Connect to the real backend ----
-let usingDemo = false;
-const socket = io({ reconnectionAttempts: 2, timeout: 2500 });
-
-socket.on('connect', () => {
-  connLabel.textContent = 'Live';
-});
-socket.on('players:snapshot', (list) => {
-  players = {};
-  list.forEach(p => players[p.userId] = p);
-  renderAll();
-});
-socket.on('player:update', (p) => upsertPlayer(p, true));
-socket.on('player:left', ({userId}) => {
-  if (players[userId]) { players[userId].inGame = false; renderAll(); }
-});
-socket.on('connect_error', () => {
-  if (!usingDemo) startDemoMode();
-});
-
-// ---- Demo mode fallback (no backend reachable, e.g. previewing this file alone) ----
-function startDemoMode(){
-  usingDemo = true;
-  connLabel.textContent = 'Demo data';
-  const demoNames = ['Skyler_23','BuilderMax','Quinnzel','Ravencl4w','Toastie','Nova_Prime'];
-  const demoItems = ['Sword','Shield','Boots of Haste','Golden Key','Health Potion','Cape','Wand','Helmet'];
-  players = {};
-  demoNames.forEach((name, i) => {
-    players[1000+i] = {
-      userId: 1000+i, username: name,
-      currency: Math.floor(Math.random()*5000),
-      level: Math.floor(Math.random()*40)+1,
-      inventory: demoItems.slice(0, Math.floor(Math.random()*5)),
-      inGame: true
-    };
-  });
-  renderAll();
-  setInterval(() => {
-    const ids = Object.keys(players);
-    const id = ids[Math.floor(Math.random()*ids.length)];
-    const p = players[id];
-    p.currency = Math.max(0, p.currency + (Math.floor(Math.random()*400)-150));
-    upsertPlayer({...p}, true);
-  }, 2200);
-}
-</script>
-</body>
-</html>
+let
