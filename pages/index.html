@@ -212,4 +212,174 @@ const connBadge = document.getElementById('connBadge');
 const searchEl = document.getElementById('search');
 const tabs = document.querySelectorAll('.tab');
 
-let
+let players = {};
+let expanded = new Set();
+let filter = 'all';
+let query = '';
+
+function initials(name){ return (name||'?').slice(0,2).toUpperCase(); }
+function timeAgo(iso){
+  if(!iso) return '';
+  const s = Math.floor((Date.now() - new Date(iso).getTime())/1000);
+  if (s < 5) return 'just now';
+  if (s < 60) return s+'s ago';
+  const m = Math.floor(s/60);
+  if (m < 60) return m+'m ago';
+  const h = Math.floor(m/60);
+  return h+'h ago';
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function renderStats(list){
+  const online = list.filter(p=>p.inGame);
+  document.getElementById('statOnline').textContent = online.length;
+  document.getElementById('statTotal').textContent = list.length;
+  document.getElementById('statCurrency').textContent = online.reduce((s,p)=>s+(p.currency||0),0).toLocaleString();
+  document.getElementById('statLevel').textContent = online.length
+    ? (online.reduce((s,p)=>s+(p.level||1),0)/online.length).toFixed(1)
+    : '0';
+  document.getElementById('statItems').textContent = online.reduce((s,p)=>s+(p.inventory?p.inventory.length:0),0);
+}
+
+function renderAll(flashId){
+  let list = Object.values(players);
+  renderStats(list);
+
+  if (filter === 'online') list = list.filter(p=>p.inGame);
+  if (filter === 'offline') list = list.filter(p=>!p.inGame);
+  if (query) list = list.filter(p => p.username.toLowerCase().includes(query));
+
+  list.sort((a,b)=>{
+    if (a.inGame !== b.inGame) return a.inGame ? -1 : 1;
+    return (b.currency||0)-(a.currency||0);
+  });
+
+  emptyState.style.display = list.length ? 'none' : 'block';
+  rowsEl.innerHTML = '';
+  list.forEach(p => rowsEl.appendChild(renderRow(p, flashId === p.userId)));
+}
+
+function renderRow(p, flash){
+  const row = document.createElement('div');
+  row.className = 'row' + (expanded.has(p.userId) ? ' expanded' : '');
+  row.dataset.id = p.userId;
+
+  const chips = (p.inventory && p.inventory.length)
+    ? p.inventory.map(i => `<span class="chip">${escapeHtml(i)}</span>`).join('')
+    : `<span class="chip empty">empty</span>`;
+
+  row.innerHTML = `
+    <div class="row-head">
+      <div class="chevron">▶</div>
+      <div class="acct">
+        <div class="avatar">${initials(p.username)}</div>
+        <div class="acct-name">
+          <div class="u">${escapeHtml(p.username)}</div>
+          <div class="id">#${p.userId}</div>
+        </div>
+      </div>
+      <div class="col currency amount${flash?' flash':''}">${(p.currency||0).toLocaleString()}</div>
+      <div class="col col-level">Lv.${p.level ?? 1}</div>
+      <div class="col col-items">${p.inventory ? p.inventory.length : 0}</div>
+      <div class="col col-updated">${timeAgo(p.updatedAt)}</div>
+      <div class="status-pill ${p.inGame ? 'online' : 'offline'}">${p.inGame ? '● online' : '○ offline'}</div>
+    </div>
+    <div class="row-body">
+      <div class="inv-label">Inventory (${p.inventory ? p.inventory.length : 0})</div>
+      <div class="inv-chips">${chips}</div>
+    </div>
+  `;
+  row.querySelector('.row-head').addEventListener('click', () => {
+    if (expanded.has(p.userId)) expanded.delete(p.userId); else expanded.add(p.userId);
+    renderAll();
+  });
+  return row;
+}
+
+function upsertPlayer(p, isLive){
+  players[p.userId] = p;
+  renderAll(isLive ? p.userId : null);
+}
+
+function feedTagClass(type){
+  if (type === 'online') return 'online';
+  if (type === 'offline') return 'offline';
+  if (type === 'currency') return 'currency';
+  if (type === 'level') return 'level';
+  return 'item';
+}
+function feedDescription(e){
+  if (e.eventType === 'online') return 'is now online';
+  if (e.eventType === 'offline') return 'went offline';
+  if (e.payload && e.payload.name) return `${e.eventType}: ${e.payload.name}`;
+  return e.eventType;
+}
+function addFeedRow(e, prepend){
+  if (feedEl.querySelector('.feed-empty')) feedEl.innerHTML = '';
+  const row = document.createElement('div');
+  row.className = 'feed-row';
+  row.innerHTML = `
+    <span class="feed-tag ${feedTagClass(e.eventType)}">${escapeHtml(e.eventType)}</span>
+    <span class="feed-user">${escapeHtml(e.username || 'player#'+e.userId)}</span>
+    <span class="feed-desc">${escapeHtml(feedDescription(e))}</span>
+    <span class="feed-time">${timeAgo(e.createdAt)}</span>
+  `;
+  if (prepend) feedEl.prepend(row); else feedEl.appendChild(row);
+  while (feedEl.children.length > 30) feedEl.removeChild(feedEl.lastChild);
+}
+
+searchEl.addEventListener('input', () => { query = searchEl.value.trim().toLowerCase(); renderAll(); });
+tabs.forEach(t => t.addEventListener('click', () => {
+  tabs.forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  filter = t.dataset.filter;
+  renderAll();
+}));
+
+let usingDemo = false;
+const socket = io({ reconnectionAttempts: 2, timeout: 2500 });
+
+socket.on('connect', () => { connLabel.textContent = 'Live'; connBadge.classList.add('live'); });
+socket.on('players:snapshot', (list) => {
+  players = {}; list.forEach(p => players[p.userId] = p); renderAll();
+});
+socket.on('events:snapshot', (list) => {
+  feedEl.innerHTML = list.length ? '' : '<div class="feed-empty">Waiting for activity…</div>';
+  list.slice().reverse().forEach(e => addFeedRow(e, false));
+});
+socket.on('player:update', (p) => upsertPlayer(p, true));
+socket.on('player:left', ({userId}) => { if (players[userId]) { players[userId].inGame = false; renderAll(); } });
+socket.on('game:event', (e) => addFeedRow(e, true));
+socket.on('connect_error', () => { if (!usingDemo) startDemoMode(); });
+
+function startDemoMode(){
+  usingDemo = true;
+  connLabel.textContent = 'Demo data';
+  const demoNames = ['Skyler_23','BuilderMax','Quinnzel','Ravencl4w','Toastie'];
+  const demoItems = ['Sword','Shield','Boots of Haste','Golden Key','Potion','Cape'];
+  players = {};
+  demoNames.forEach((name, i) => {
+    players[1000+i] = {
+      userId: 1000+i, username: name,
+      currency: Math.floor(Math.random()*5000),
+      level: Math.floor(Math.random()*40)+1,
+      inventory: demoItems.slice(0, Math.floor(Math.random()*5)),
+      inGame: Math.random() > 0.3,
+      updatedAt: new Date().toISOString()
+    };
+  });
+  renderAll();
+  addFeedRow({eventType:'online', username:'Skyler_23', createdAt:new Date().toISOString()}, true);
+  setInterval(() => {
+    const ids = Object.keys(players);
+    const id = ids[Math.floor(Math.random()*ids.length)];
+    const p = players[id];
+    p.currency = Math.max(0, p.currency + (Math.floor(Math.random()*400)-150));
+    p.updatedAt = new Date().toISOString();
+    upsertPlayer({...p}, true);
+    if (Math.random() > 0.6) addFeedRow({eventType:'item', username:p.username, payload:{name:'Rare Gem'}, createdAt:new Date().toISOString()}, true);
+  }, 2200);
+}
+</script>
+</body>
+</html>
