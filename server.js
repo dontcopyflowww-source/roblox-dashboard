@@ -4,7 +4,8 @@ const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
 const {
-  upsertPlayer, markLeft, getAllPlayers, logEvent, serializePlayer
+  upsertPlayer, markLeft, getAllPlayers, logEvent, getRecentEvents,
+  serializePlayer, serializeEvent
 } = require('./db');
 
 const app = express();
@@ -15,8 +16,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Simple shared-secret auth so random people can't post fake stats to your dashboard.
-// Set this in your environment and paste the same value into the Roblox script.
 const API_KEY = process.env.DASHBOARD_API_KEY || 'change-me-please';
 
 function requireApiKey(req, res, next) {
@@ -26,6 +25,12 @@ function requireApiKey(req, res, next) {
   next();
 }
 
+function pushEvent(e) {
+  const now = new Date().toISOString();
+  logEvent({ ...e, created_at: now });
+  io.emit('game:event', { ...e, createdAt: now });
+}
+
 // Roblox calls this whenever a tracked stat changes (currency, level, inventory).
 app.post('/api/player-update', requireApiKey, (req, res) => {
   const { userId, username, currency, level, inventory } = req.body || {};
@@ -33,7 +38,9 @@ app.post('/api/player-update', requireApiKey, (req, res) => {
     return res.status(400).json({ error: 'userId and username are required' });
   }
 
+  const wasKnown = getAllPlayers().some(p => p.user_id === userId);
   const now = new Date().toISOString();
+
   upsertPlayer({
     user_id: userId,
     username,
@@ -43,6 +50,10 @@ app.post('/api/player-update', requireApiKey, (req, res) => {
     updated_at: now
   });
 
+  if (!wasKnown) {
+    pushEvent({ user_id: userId, username, event_type: 'online', payload: null });
+  }
+
   const players = getAllPlayers().map(serializePlayer);
   const updated = players.find(p => p.userId === userId);
   io.emit('player:update', updated);
@@ -51,38 +62,43 @@ app.post('/api/player-update', requireApiKey, (req, res) => {
 
 // Roblox calls this when a player leaves the game.
 app.post('/api/player-left', requireApiKey, (req, res) => {
-  const { userId } = req.body || {};
+  const { userId, username } = req.body || {};
   if (!userId) return res.status(400).json({ error: 'userId is required' });
 
   const now = new Date().toISOString();
   markLeft({ user_id: userId, updated_at: now });
+  pushEvent({ user_id: userId, username, event_type: 'offline', payload: null });
   io.emit('player:left', { userId });
   res.json({ ok: true });
 });
 
-// Optional: generic event log (purchases, deaths, etc.) shown as a live feed.
+// Generic event log for the activity feed: item pickups, milestones, purchases, etc.
+// Roblox example:
+//   POST /api/event  { userId, username, eventType: "pet", payload: { name: "Rainbow Unicorn" } }
 app.post('/api/event', requireApiKey, (req, res) => {
-  const { userId, eventType, payload } = req.body || {};
+  const { userId, username, eventType, payload } = req.body || {};
   if (!eventType) return res.status(400).json({ error: 'eventType is required' });
 
-  const now = new Date().toISOString();
-  logEvent({
+  pushEvent({
     user_id: userId ?? null,
+    username: username ?? null,
     event_type: eventType,
-    payload: JSON.stringify(payload ?? {}),
-    created_at: now
+    payload: JSON.stringify(payload ?? {})
   });
-  io.emit('game:event', { userId, eventType, payload, createdAt: now });
   res.json({ ok: true });
 });
 
-// Dashboard loads current state once on page load, then listens on the socket for live updates.
 app.get('/api/players', (req, res) => {
   res.json(getAllPlayers().map(serializePlayer));
 });
 
+app.get('/api/events', (req, res) => {
+  res.json(getRecentEvents(50).map(serializeEvent));
+});
+
 io.on('connection', (socket) => {
   socket.emit('players:snapshot', getAllPlayers().map(serializePlayer));
+  socket.emit('events:snapshot', getRecentEvents(50).map(serializeEvent));
 });
 
 const PORT = process.env.PORT || 3000;

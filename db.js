@@ -21,6 +21,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id     INTEGER,
+    username    TEXT,
     event_type  TEXT NOT NULL,
     payload     TEXT,
     created_at  TEXT NOT NULL
@@ -48,8 +49,12 @@ const getAllStmt = db.prepare(`
 `);
 
 const logEventStmt = db.prepare(`
-  INSERT INTO events (user_id, event_type, payload, created_at)
-  VALUES ($user_id, $event_type, $payload, $created_at)
+  INSERT INTO events (user_id, username, event_type, payload, created_at)
+  VALUES ($user_id, $username, $event_type, $payload, $created_at)
+`);
+
+const getRecentEventsStmt = db.prepare(`
+  SELECT * FROM events ORDER BY id DESC LIMIT $limit
 `);
 
 function upsertPlayer(p) {
@@ -73,11 +78,16 @@ function getAllPlayers() {
 
 function logEvent(e) {
   logEventStmt.run({
-    user_id: e.user_id,
+    user_id: e.user_id ?? null,
+    username: e.username ?? null,
     event_type: e.event_type,
     payload: e.payload,
     created_at: e.created_at
   });
+}
+
+function getRecentEvents(limit = 50) {
+  return getRecentEventsStmt.all({ limit });
 }
 
 function serializePlayer(row) {
@@ -92,4 +102,18 @@ function serializePlayer(row) {
   };
 }
 
-module.exports = { upsertPlayer, markLeft, getAllPlayers, logEvent, serializePlayer };
+function serializeEvent(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    username: row.username,
+    eventType: row.event_type,
+    payload: row.payload ? JSON.parse(row.payload) : {},
+    createdAt: row.created_at
+  };
+}
+
+module.exports = {
+  upsertPlayer, markLeft, getAllPlayers, logEvent, getRecentEvents,
+  serializePlayer, serializeEvent
+};
