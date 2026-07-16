@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Game Ledger — Live Player Stats</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+  :root{
+    --bg: #14161c;
+    --bg-panel: #1b1e26;
+    --bg-card: #20232c;
+    --hairline: #2c303b;
+    --ink: #f0eee6;
+    --ink-dim: #8b93a6;
+    --gold: #e8a33d;
+    --gold-dim: #9c763f;
+    --live: #4fd1c5;
+    --danger: #d9704f;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background:
+      radial-gradient(1200px 500px at 15% -10%, rgba(232,163,61,0.06), transparent 60%),
+      var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    padding: 32px 24px 64px;
+  }
+  .wrap{ max-width: 1180px; margin: 0 auto; }
+
+  header{
+    display:flex; align-items:flex-end; justify-content:space-between;
+    flex-wrap: wrap; gap: 16px;
+    border-bottom: 1px solid var(--hairline);
+    padding-bottom: 20px; margin-bottom: 28px;
+  }
+  .title-block h1{
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 28px; font-weight: 700; letter-spacing: -0.02em;
+    margin: 0 0 4px;
+  }
+  .title-block .sub{ color: var(--ink-dim); font-size: 13px; }
+  .status{
+    display:flex; align-items:center; gap: 22px;
+  }
+  .status .stat{ text-align:right; }
+  .status .stat .num{
+    font-family:'IBM Plex Mono', monospace; font-size: 22px; font-weight:600;
+  }
+  .status .stat .label{ font-size: 11px; color: var(--ink-dim); text-transform:uppercase; letter-spacing:.08em; }
+  .live-pill{
+    display:flex; align-items:center; gap:7px;
+    font-family:'IBM Plex Mono', monospace; font-size: 11px; letter-spacing:.08em;
+    text-transform:uppercase; color: var(--live);
+    border: 1px solid rgba(79,209,197,0.35); background: rgba(79,209,197,0.08);
+    padding: 6px 10px; border-radius: 20px;
+  }
+  .live-dot{
+    width:7px; height:7px; border-radius:50%; background: var(--live);
+    box-shadow: 0 0 0 0 rgba(79,209,197,0.6);
+    animation: pulse 1.8s infinite;
+  }
+  @keyframes pulse{
+    0%{ box-shadow: 0 0 0 0 rgba(79,209,197,0.55); }
+    70%{ box-shadow: 0 0 0 7px rgba(79,209,197,0); }
+    100%{ box-shadow: 0 0 0 0 rgba(79,209,197,0); }
+  }
+
+  .grid{
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+    gap: 14px;
+  }
+
+  .card{
+    background: var(--bg-card);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: 16px 18px;
+    position: relative;
+    transition: border-color .3s ease;
+  }
+  .card.offline{ opacity: 0.45; }
+  .card-top{
+    display:flex; align-items:center; gap: 10px; margin-bottom: 14px;
+  }
+  .avatar{
+    width: 34px; height:34px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--gold), var(--gold-dim));
+    color: #1b1508; font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:15px;
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .name-block{ min-width:0; }
+  .username{ font-weight:600; font-size:14.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .userid{ color: var(--ink-dim); font-size:11px; font-family:'IBM Plex Mono', monospace; }
+  .level-badge{
+    margin-left:auto; font-family:'IBM Plex Mono', monospace; font-size: 11px;
+    color: var(--ink); background: var(--bg-panel); border:1px solid var(--hairline);
+    padding: 3px 8px; border-radius: 20px; flex-shrink:0;
+  }
+
+  .currency-row{
+    display:flex; align-items:baseline; gap:6px; margin-bottom: 12px;
+    font-family:'IBM Plex Mono', monospace;
+  }
+  .currency-row .amount{
+    font-size: 22px; font-weight:600; color: var(--gold);
+  }
+  .currency-row .cur-label{ font-size:11px; color: var(--ink-dim); text-transform:uppercase; letter-spacing:.06em; }
+
+  .amount.flash{ animation: flash 0.9s ease; }
+  @keyframes flash{
+    0%{ color: var(--ink); text-shadow: 0 0 14px rgba(232,163,61,0.9); }
+    100%{ color: var(--gold); text-shadow: none; }
+  }
+
+  .inv-label{ font-size:10.5px; color: var(--ink-dim); text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px; }
+  .inv-chips{ display:flex; flex-wrap:wrap; gap:5px; min-height: 22px; }
+  .chip{
+    font-size: 11px; padding: 3px 8px; border-radius: 5px;
+    background: var(--bg-panel); border: 1px solid var(--hairline); color: var(--ink-dim);
+  }
+  .chip.empty{ border-style:dashed; }
+
+  .updated{
+    position:absolute; top:14px; right:16px; font-size:10px; color: var(--ink-dim);
+    font-family:'IBM Plex Mono', monospace;
+  }
+
+  .empty-state{
+    text-align:center; padding: 90px 20px; color: var(--ink-dim);
+  }
+  .empty-state .glyph{ font-size: 34px; margin-bottom: 10px; }
+  .empty-state .sub{ font-size:13px; max-width:360px; margin: 6px auto 0; line-height:1.5; }
+
+  footer{
+    margin-top: 34px; text-align:center; font-size: 11px; color: var(--ink-dim);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="title-block">
+      <h1>Game Ledger</h1>
+      <div class="sub">Live player stats — currency, level &amp; inventory</div>
+    </div>
+    <div class="status">
+      <div class="stat">
+        <div class="num" id="onlineCount">0</div>
+        <div class="label">In Game</div>
+      </div>
+      <div class="stat">
+        <div class="num" id="totalCurrency">0</div>
+        <div class="label">Total Currency</div>
+      </div>
+      <div class="live-pill"><span class="live-dot"></span><span id="connLabel">Connecting</span></div>
+    </div>
+  </header>
+
+  <div class="grid" id="grid"></div>
+  <div class="empty-state" id="emptyState" style="display:none;">
+    <div class="glyph">◌</div>
+    <div>No players reporting yet</div>
+    <div class="sub">Once your Roblox game sends its first player-update, cards will appear here automatically.</div>
+  </div>
+
+  <footer>game-ledger · updates over websocket · no refresh needed</footer>
+</div>
+
+<script>
+const grid = document.getElementById('grid');
+const emptyState = document.getElementById('emptyState');
+const onlineCountEl = document.getElementById('onlineCount');
+const totalCurrencyEl = document.getElementById('totalCurrency');
+const connLabel = document.getElementById('connLabel');
+
+let players = {}; // userId -> player object
+
+function initials(name){
+  return (name || '?').slice(0,2).toUpperCase();
+}
+
+function renderAll(){
+  const list = Object.values(players).sort((a,b)=>{
+    if (a.inGame !== b.inGame) return a.inGame ? -1 : 1;
+    return (b.currency||0) - (a.currency||0);
+  });
+
+  emptyState.style.display = list.length ? 'none' : 'block';
+
+  const online = list.filter(p=>p.inGame);
+  onlineCountEl.textContent = online.length;
+  totalCurrencyEl.textContent = online.reduce((s,p)=>s+(p.currency||0),0).toLocaleString();
+
+  grid.innerHTML = '';
+  list.forEach(p => grid.appendChild(renderCard(p)));
+}
+
+function renderCard(p, flashCurrency){
+  const card = document.createElement('div');
+  card.className = 'card' + (p.inGame ? '' : ' offline');
+  card.id = 'card-' + p.userId;
+
+  const chips = (p.inventory && p.inventory.length)
+    ? p.inventory.slice(0,6).map(i => `<span class="chip">${escapeHtml(i)}</span>`).join('')
+    : `<span class="chip empty">empty</span>`;
+
+  card.innerHTML = `
+    <div class="updated">${p.inGame ? 'live' : 'offline'}</div>
+    <div class="card-top">
+      <div class="avatar">${initials(p.username)}</div>
+      <div class="name-block">
+        <div class="username">${escapeHtml(p.username)}</div>
+        <div class="userid">#${p.userId}</div>
+      </div>
+      <div class="level-badge">LVL ${p.level ?? 1}</div>
+    </div>
+    <div class="currency-row">
+      <span class="amount${flashCurrency ? ' flash' : ''}">${(p.currency||0).toLocaleString()}</span>
+      <span class="cur-label">coins</span>
+    </div>
+    <div class="inv-label">Inventory (${p.inventory ? p.inventory.length : 0})</div>
+    <div class="inv-chips">${chips}</div>
+  `;
+  return card;
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function upsertPlayer(p, isLiveUpdate){
+  const prev = players[p.userId];
+  players[p.userId] = p;
+  renderAll();
+  if (isLiveUpdate) {
+    const el = document.querySelector('#card-' + p.userId + ' .amount');
+    if (el && prev && prev.currency !== p.currency) {
+      el.classList.add('flash');
+      setTimeout(()=>el.classList.remove('flash'), 900);
+    }
+  }
+}
+
+// ---- Connect to the real backend ----
+let usingDemo = false;
+const socket = io({ reconnectionAttempts: 2, timeout: 2500 });
+
+socket.on('connect', () => {
+  connLabel.textContent = 'Live';
+});
+socket.on('players:snapshot', (list) => {
+  players = {};
+  list.forEach(p => players[p.userId] = p);
+  renderAll();
+});
+socket.on('player:update', (p) => upsertPlayer(p, true));
+socket.on('player:left', ({userId}) => {
+  if (players[userId]) { players[userId].inGame = false; renderAll(); }
+});
+socket.on('connect_error', () => {
+  if (!usingDemo) startDemoMode();
+});
+
+// ---- Demo mode fallback (no backend reachable, e.g. previewing this file alone) ----
+function startDemoMode(){
+  usingDemo = true;
+  connLabel.textContent = 'Demo data';
+  const demoNames = ['Skyler_23','BuilderMax','Quinnzel','Ravencl4w','Toastie','Nova_Prime'];
+  const demoItems = ['Sword','Shield','Boots of Haste','Golden Key','Health Potion','Cape','Wand','Helmet'];
+  players = {};
+  demoNames.forEach((name, i) => {
+    players[1000+i] = {
+      userId: 1000+i, username: name,
+      currency: Math.floor(Math.random()*5000),
+      level: Math.floor(Math.random()*40)+1,
+      inventory: demoItems.slice(0, Math.floor(Math.random()*5)),
+      inGame: true
+    };
+  });
+  renderAll();
+  setInterval(() => {
+    const ids = Object.keys(players);
+    const id = ids[Math.floor(Math.random()*ids.length)];
+    const p = players[id];
+    p.currency = Math.max(0, p.currency + (Math.floor(Math.random()*400)-150));
+    upsertPlayer({...p}, true);
+  }, 2200);
+}
+</script>
+</body>
+</html>
